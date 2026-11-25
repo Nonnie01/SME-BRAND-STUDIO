@@ -1,0 +1,398 @@
+{
+  "entities": {
+    "CustomerPrivateProfile": {
+      "title": "CustomerPrivateProfile",
+      "description": "Private customer profile containing PII, strictly restricted to the owning user or verified admin.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Firebase Authentication UID of the profile owner."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254,
+          "description": "Customer email address."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Customer display name."
+        },
+        "defaultBusinessName": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Optional default SME business name."
+        },
+        "defaultLocation": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Optional default Nigerian business city or state."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of initial profile creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest profile update."
+        }
+      },
+      "required": ["uid", "email", "displayName", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Read-only client RBAC marker granting Done-for-You workspace administration; managed strictly outside client SDK.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "BrandProject": {
+      "title": "BrandProject",
+      "description": "Text-only persistent brand project saved by an authenticated customer or managed by a verified admin for Done-for-You delivery.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "UID of the customer who owns this project."
+        },
+        "ownerEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254,
+          "description": "Email address of the owning customer."
+        },
+        "managedByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Optional admin UID for Done-for-You managed projects."
+        },
+        "studioMode": {
+          "type": "string",
+          "enum": ["create", "improve"]
+        },
+        "businessType": {
+          "type": "string",
+          "enum": ["product", "service", "hybrid"]
+        },
+        "businessName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "businessCategory": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "selectedRegions": {
+          "type": "array",
+          "description": "Selected Nigerian states and FCT (max 38 items)."
+        },
+        "targetLocation": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "brandTone": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "priceRange": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "productDescription": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "serviceDescription": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "formSnapshot": {
+          "type": "object",
+          "description": "Structured text-only snapshot of form inputs for reopening and editing."
+        },
+        "brandResult": {
+          "type": "object",
+          "description": "Generated BrandStudioResult JSON object (names, palette, positioning, captions, ads)."
+        },
+        "promoImageRefs": {
+          "type": "array",
+          "description": "Metadata references of promotional flyers generated in session (fileName, format, mode, createdLabel) — no binary image blobs."
+        },
+        "isDoneForYou": {
+          "type": "boolean"
+        },
+        "clientName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "clientEmail": {
+          "type": "string",
+          "maxLength": 254
+        },
+        "clientNotes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "active", "delivered", "archived"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "ownerEmail",
+        "studioMode",
+        "businessType",
+        "businessName",
+        "businessCategory",
+        "selectedRegions",
+        "brandResult",
+        "promoImageRefs",
+        "isDoneForYou",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ClientOrder": {
+      "title": "ClientOrder",
+      "description": "Done-for-You client branding service order managed exclusively by custom-claim administrators.",
+      "type": "object",
+      "properties": {
+        "createdByAdminUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128
+        },
+        "businessName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "clientName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "contactRoute": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 240
+        },
+        "businessCategory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "clientBrief": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "status": {
+          "type": "string",
+          "enum": ["New", "In Progress", "Awaiting Review", "Revision Requested", "Completed"]
+        },
+        "revisionNotes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "deliveryStatus": {
+          "type": "string",
+          "enum": ["Not Started", "Draft Ready", "Sent to Client", "Delivered"]
+        },
+        "manualPaymentStatus": {
+          "type": "string",
+          "enum": ["Unpaid", "Manually Confirmed", "Partial Confirmed"]
+        },
+        "manualPaymentNote": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "confirmedAmountNaira": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "linkedProjectId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "createdByAdminUid",
+        "businessName",
+        "contactRoute",
+        "businessCategory",
+        "packageName",
+        "clientBrief",
+        "status",
+        "deliveryStatus",
+        "manualPaymentStatus",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DoneForYouProject": {
+      "title": "DoneForYouProject",
+      "description": "Branding project and generated deliverables created by an administrator for a Done-for-You client order, isolated from self-service customer projects.",
+      "type": "object",
+      "properties": {
+        "createdByAdminUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128
+        },
+        "linkedOrderId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "studioMode": {
+          "type": "string",
+          "enum": ["create", "improve"]
+        },
+        "businessType": {
+          "type": "string",
+          "enum": ["product", "service", "hybrid"]
+        },
+        "businessName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "businessCategory": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "selectedRegions": {
+          "type": "array"
+        },
+        "targetLocation": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "brandTone": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "priceRange": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "productDescription": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "serviceDescription": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "formSnapshot": {
+          "type": "object"
+        },
+        "brandResult": {
+          "type": "object"
+        },
+        "promoImageRefs": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "createdByAdminUid",
+        "linkedOrderId",
+        "studioMode",
+        "businessType",
+        "businessName",
+        "businessCategory",
+        "selectedRegions",
+        "brandResult",
+        "promoImageRefs",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/private/profile": {
+      "schema": {
+        "$ref": "#/entities/CustomerPrivateProfile"
+      },
+      "description": "Private customer PII and studio preferences isolated per user UID."
+    },
+    "/admins/{userId}": {
+      "schema": {
+        "$ref": "#/entities/AdminRecord"
+      },
+      "description": "Legacy allowlist collection (retained read-only during Phase 1 transition; locked in Phase 2)."
+    },
+    "/projects/{projectId}": {
+      "schema": {
+        "$ref": "#/entities/BrandProject"
+      },
+      "description": "Saved self-service SME Brand Studio projects scoped strictly to ownerId."
+    },
+    "/orders/{orderId}": {
+      "schema": {
+        "$ref": "#/entities/ClientOrder"
+      },
+      "description": "Done-for-You client branding orders accessible strictly by verified custom-claim administrators."
+    },
+    "/doneForYouProjects/{projectId}": {
+      "schema": {
+        "$ref": "#/entities/DoneForYouProject"
+      },
+      "description": "Done-for-You branding deliverables linked to orders, accessible strictly by verified custom-claim administrators."
+    }
+  }
+}

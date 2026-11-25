@@ -1,0 +1,6 @@
+{
+  "name": "SME Brand Studio",
+  "description": "Empowering Nigerian small businesses to transform product photos into premium brand identities, bilingual English & Pidgin captions, and high-converting social campaigns.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

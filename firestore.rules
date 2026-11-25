@@ -1,0 +1,315 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Custom-claim admin verification (server-assigned via Firebase Admin SDK only)
+    function hasAdminClaim() {
+      return isVerifiedUser() && request.auth.token.admin == true;
+    }
+
+    // Phase 1 transition: preserve legacy fallback only during verification; removed in Phase 2
+    function isVerifiedBootstrapAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'esindunonye@gmail.com';
+    }
+
+    function isAdmin() {
+      return hasAdminClaim() || isVerifiedBootstrapAdmin() || (
+        isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Server connectivity probe path (strictly closed to anonymous/public reads)
+    match /test/connection {
+      allow get: if isSignedIn();
+      allow list, write: if false;
+    }
+
+    // 3. Admins Allowlist (Read own marker only; strictly non-writable from client SDK)
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && isVerifiedUser() && request.auth.uid == userId;
+      allow list, create, update, delete: if false;
+    }
+
+    // 4. Customer Private Profile (Strict PII Isolation)
+    function isValidCustomerProfile(data) {
+      return data is map
+        && data.keys().hasAll(['uid', 'email', 'displayName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'defaultBusinessName', 'defaultLocation', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && (!data.keys().hasAny(['defaultBusinessName']) || (data.defaultBusinessName is string && data.defaultBusinessName.size() <= 160))
+        && (!data.keys().hasAny(['defaultLocation']) || (data.defaultLocation is string && data.defaultLocation.size() <= 160))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId}/private/profile {
+      allow get: if isValidId(userId) && ((isOwner(userId) && isVerifiedUser()) || isAdmin());
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isVerifiedUser()
+        && isOwner(userId)
+        && isValidCustomerProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isVerifiedUser()
+        && isOwner(userId)
+        && isValidCustomerProfile(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'defaultBusinessName', 'defaultLocation', 'updatedAt'])
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(userId) && isVerifiedUser() && isOwner(userId);
+    }
+
+    // 5. Saved Brand Projects (/projects/{projectId})
+    function isValidBrandProject(data) {
+      return data is map
+        && data.keys().hasAll([
+          'ownerId', 'ownerEmail', 'studioMode', 'businessType',
+          'businessName', 'businessCategory', 'selectedRegions',
+          'brandResult', 'promoImageRefs', 'isDoneForYou', 'status',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'ownerEmail', 'managedByUid', 'studioMode', 'businessType',
+          'businessName', 'businessCategory', 'selectedRegions', 'targetLocation',
+          'brandTone', 'priceRange', 'productDescription', 'serviceDescription',
+          'formSnapshot', 'brandResult', 'promoImageRefs', 'isDoneForYou',
+          'clientName', 'clientEmail', 'clientNotes', 'status',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.ownerEmail is string && data.ownerEmail.size() >= 3 && data.ownerEmail.size() <= 254
+        && (!data.keys().hasAny(['managedByUid']) || (data.managedByUid is string && data.managedByUid.size() <= 128))
+        && data.studioMode in ['create', 'improve']
+        && data.businessType in ['product', 'service', 'hybrid']
+        && data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 160
+        && data.businessCategory is string && data.businessCategory.size() <= 120
+        && data.selectedRegions is list && data.selectedRegions.size() <= 38
+        && (data.selectedRegions.size() == 0 || data.selectedRegions[0] is string)
+        && (!data.keys().hasAny(['targetLocation']) || (data.targetLocation is string && data.targetLocation.size() <= 300))
+        && (!data.keys().hasAny(['brandTone']) || (data.brandTone is string && data.brandTone.size() <= 120))
+        && (!data.keys().hasAny(['priceRange']) || (data.priceRange is string && data.priceRange.size() <= 120))
+        && (!data.keys().hasAny(['productDescription']) || (data.productDescription is string && data.productDescription.size() <= 4000))
+        && (!data.keys().hasAny(['serviceDescription']) || (data.serviceDescription is string && data.serviceDescription.size() <= 4000))
+        && (!data.keys().hasAny(['formSnapshot']) || data.formSnapshot is map)
+        && data.brandResult is map
+        && data.promoImageRefs is list && data.promoImageRefs.size() <= 20
+        && (data.promoImageRefs.size() == 0 || data.promoImageRefs[0] is map)
+        && data.isDoneForYou is bool
+        && (!data.keys().hasAny(['clientName']) || (data.clientName is string && data.clientName.size() <= 160))
+        && (!data.keys().hasAny(['clientEmail']) || (data.clientEmail is string && data.clientEmail.size() <= 254))
+        && (!data.keys().hasAny(['clientNotes']) || (data.clientNotes is string && data.clientNotes.size() <= 2000))
+        && data.status in ['draft', 'active', 'delivered', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /projects/{projectId} {
+      allow get: if isValidId(projectId) && isVerifiedUser() && (
+        existing().ownerId == request.auth.uid || isAdmin()
+      );
+
+      // Secure list query enforcer (zero get()/exists() calls in list for O(1) cost protection)
+      allow list: if isVerifiedUser() && (
+        existing().ownerId == request.auth.uid ||
+        existing().managedByUid == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isValidId(projectId)
+        && isVerifiedUser()
+        && isValidBrandProject(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().ownerId == request.auth.uid && incoming().isDoneForYou == false)
+          || isAdmin()
+        );
+
+      allow update: if isValidId(projectId)
+        && isVerifiedUser()
+        && isValidBrandProject(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().ownerId == existing().ownerId
+        && incoming().updatedAt == request.time
+        && (
+          (
+            existing().ownerId == request.auth.uid
+            && existing().status != 'archived'
+            && incoming().isDoneForYou == existing().isDoneForYou
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'studioMode', 'businessType', 'businessName', 'businessCategory',
+              'selectedRegions', 'targetLocation', 'brandTone', 'priceRange',
+              'productDescription', 'serviceDescription', 'formSnapshot',
+              'brandResult', 'promoImageRefs', 'status', 'updatedAt'
+            ])
+          )
+          || (
+            isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'managedByUid', 'studioMode', 'businessType', 'businessName',
+              'businessCategory', 'selectedRegions', 'targetLocation', 'brandTone',
+              'priceRange', 'productDescription', 'serviceDescription', 'formSnapshot',
+              'brandResult', 'promoImageRefs', 'isDoneForYou', 'clientName',
+              'clientEmail', 'clientNotes', 'status', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isValidId(projectId) && isVerifiedUser() && (
+        existing().ownerId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // 6. Done-for-You Client Orders (/orders/{orderId}) — Custom-Claim Admin ONLY (Zero email fallback)
+    function isValidClientOrder(data) {
+      return data is map
+        && data.keys().hasAll([
+          'createdByAdminUid', 'businessName', 'contactRoute', 'businessCategory',
+          'packageName', 'clientBrief', 'status', 'deliveryStatus',
+          'manualPaymentStatus', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'createdByAdminUid', 'businessName', 'clientName', 'contactRoute',
+          'businessCategory', 'packageName', 'clientBrief', 'status',
+          'revisionNotes', 'deliveryStatus', 'manualPaymentStatus',
+          'manualPaymentNote', 'confirmedAmountNaira', 'linkedProjectId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.createdByAdminUid is string && data.createdByAdminUid.size() >= 1 && data.createdByAdminUid.size() <= 128 && data.createdByAdminUid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 160
+        && (!data.keys().hasAny(['clientName']) || (data.clientName is string && data.clientName.size() <= 160))
+        && data.contactRoute is string && data.contactRoute.size() >= 2 && data.contactRoute.size() <= 240
+        && data.businessCategory is string && data.businessCategory.size() >= 1 && data.businessCategory.size() <= 120
+        && data.packageName is string && data.packageName.size() >= 1 && data.packageName.size() <= 120
+        && data.clientBrief is string && data.clientBrief.size() <= 4000
+        && data.status in ['New', 'In Progress', 'Awaiting Review', 'Revision Requested', 'Completed']
+        && (!data.keys().hasAny(['revisionNotes']) || (data.revisionNotes is string && data.revisionNotes.size() <= 2000))
+        && data.deliveryStatus in ['Not Started', 'Draft Ready', 'Sent to Client', 'Delivered']
+        && data.manualPaymentStatus in ['Unpaid', 'Manually Confirmed', 'Partial Confirmed']
+        && (!data.keys().hasAny(['manualPaymentNote']) || (data.manualPaymentNote is string && data.manualPaymentNote.size() <= 500))
+        && (!data.keys().hasAny(['confirmedAmountNaira']) || (data.confirmedAmountNaira is string && data.confirmedAmountNaira.size() <= 60))
+        && (!data.keys().hasAny(['linkedProjectId']) || (data.linkedProjectId is string && data.linkedProjectId.size() <= 128 && (data.linkedProjectId.size() == 0 || data.linkedProjectId.matches('^[a-zA-Z0-9_\\-]+$'))))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId) && hasAdminClaim();
+      allow list: if hasAdminClaim();
+      allow create: if isValidId(orderId)
+        && hasAdminClaim()
+        && isValidClientOrder(incoming())
+        && incoming().createdByAdminUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(orderId)
+        && hasAdminClaim()
+        && isValidClientOrder(incoming())
+        && incoming().createdByAdminUid == existing().createdByAdminUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'businessName', 'clientName', 'contactRoute', 'businessCategory',
+          'packageName', 'clientBrief', 'status', 'revisionNotes',
+          'deliveryStatus', 'manualPaymentStatus', 'manualPaymentNote',
+          'confirmedAmountNaira', 'linkedProjectId', 'updatedAt'
+        ]);
+      allow delete: if isValidId(orderId) && hasAdminClaim();
+    }
+
+    // 7. Done-for-You Deliverable Projects (/doneForYouProjects/{projectId}) — Custom-Claim Admin ONLY
+    function isValidDoneForYouProject(data) {
+      return data is map
+        && data.keys().hasAll([
+          'createdByAdminUid', 'linkedOrderId', 'studioMode', 'businessType',
+          'businessName', 'businessCategory', 'selectedRegions',
+          'brandResult', 'promoImageRefs', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'createdByAdminUid', 'linkedOrderId', 'studioMode', 'businessType',
+          'businessName', 'businessCategory', 'selectedRegions', 'targetLocation',
+          'brandTone', 'priceRange', 'productDescription', 'serviceDescription',
+          'formSnapshot', 'brandResult', 'promoImageRefs', 'createdAt', 'updatedAt'
+        ])
+        && data.createdByAdminUid is string && data.createdByAdminUid.size() >= 1 && data.createdByAdminUid.size() <= 128 && data.createdByAdminUid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.linkedOrderId is string && data.linkedOrderId.size() <= 128 && (data.linkedOrderId.size() == 0 || data.linkedOrderId.matches('^[a-zA-Z0-9_\\-]+$'))
+        && data.studioMode in ['create', 'improve']
+        && data.businessType in ['product', 'service', 'hybrid']
+        && data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 160
+        && data.businessCategory is string && data.businessCategory.size() <= 120
+        && data.selectedRegions is list && data.selectedRegions.size() <= 38
+        && (data.selectedRegions.size() == 0 || data.selectedRegions[0] is string)
+        && (!data.keys().hasAny(['targetLocation']) || (data.targetLocation is string && data.targetLocation.size() <= 300))
+        && (!data.keys().hasAny(['brandTone']) || (data.brandTone is string && data.brandTone.size() <= 120))
+        && (!data.keys().hasAny(['priceRange']) || (data.priceRange is string && data.priceRange.size() <= 120))
+        && (!data.keys().hasAny(['productDescription']) || (data.productDescription is string && data.productDescription.size() <= 4000))
+        && (!data.keys().hasAny(['serviceDescription']) || (data.serviceDescription is string && data.serviceDescription.size() <= 4000))
+        && (!data.keys().hasAny(['formSnapshot']) || data.formSnapshot is map)
+        && data.brandResult is map
+        && data.promoImageRefs is list && data.promoImageRefs.size() <= 20
+        && (data.promoImageRefs.size() == 0 || data.promoImageRefs[0] is map)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /doneForYouProjects/{projectId} {
+      allow get: if isValidId(projectId) && hasAdminClaim();
+      allow list: if hasAdminClaim();
+      allow create: if isValidId(projectId)
+        && hasAdminClaim()
+        && isValidDoneForYouProject(incoming())
+        && incoming().createdByAdminUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(projectId)
+        && hasAdminClaim()
+        && isValidDoneForYouProject(incoming())
+        && incoming().createdByAdminUid == existing().createdByAdminUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'linkedOrderId', 'studioMode', 'businessType', 'businessName',
+          'businessCategory', 'selectedRegions', 'targetLocation', 'brandTone',
+          'priceRange', 'productDescription', 'serviceDescription',
+          'formSnapshot', 'brandResult', 'promoImageRefs', 'updatedAt'
+        ]);
+      allow delete: if isValidId(projectId) && hasAdminClaim();
+    }
+  }
+}
